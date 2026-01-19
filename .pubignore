@@ -1,0 +1,16 @@
+# Exclude test fixtures and tests (not needed for package consumers)
+test/
+
+# Exclude CLI tool (users can use it from source if needed)
+bin/
+
+# Ignore internal documentation files and any AI kibble
+AGENTS.md
+GEMINI.md
+CLAUDE.md
+.claude
+lib/src/**/*.md
+lib/src/**/*.txt
+
+# Ignore tool files
+tool/

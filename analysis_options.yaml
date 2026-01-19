@@ -1,0 +1,26 @@
+# This file configures the static analysis results for your project (errors,
+# warnings, and lints).
+
+include: package:lints/recommended.yaml
+
+linter:
+  rules:
+    # Style
+    - prefer_final_locals
+    - prefer_final_in_for_each
+    - prefer_is_empty
+    - sort_pub_dependencies
+
+    # Safety
+    - avoid_dynamic_calls
+    - avoid_type_to_string
+    - cancel_subscriptions
+    - close_sinks
+    - literal_only_boolean_expressions
+    - no_adjacent_strings_in_list
+    - throw_in_finally
+    - unnecessary_statements
+
+analyzer:
+  exclude:
+    - tool/**

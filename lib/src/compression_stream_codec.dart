@@ -1,0 +1,116 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+/// Base abstract class for streaming compression codecs
+///
+/// Provides stream-based compression and decompression for processing
+/// large data that doesn't fit in memory. Implementations should handle
+/// chunked input and output efficiently.
+///
+/// ## Stream Behavior
+///
+/// - **Chunk sizes**: Input chunks can be any size; the codec handles
+///   buffering internally. Output chunk sizes depend on the algorithm's
+///   block structure (e.g., LZ4 emits 4MB blocks, Snappy emits 64KB chunks).
+///
+/// - **Ordering**: Output chunks are emitted in order as input is processed.
+///   Some buffering occurs to satisfy format requirements (headers, checksums).
+///
+/// - **Finalization**: The stream completes when the input stream closes.
+///   Final data (trailers, checksums) is flushed automatically.
+///
+/// ## Cancellation
+///
+/// Stream operations can be cancelled by cancelling the output stream
+/// subscription. This will propagate back and cancel the input stream.
+/// Internal buffers are released when the stream terminates.
+///
+/// ```dart
+/// final subscription = codec.compress(input).listen((chunk) {
+///   output.add(chunk);
+/// });
+/// // Later, to cancel:
+/// await subscription.cancel();
+/// ```
+///
+/// ## Memory Guarantees
+///
+/// Streaming codecs maintain bounded memory usage:
+/// - Compression buffers: Up to one block size (codec-dependent, typically 64KB-4MB)
+/// - Decompression buffers: Up to declared block size from compressed stream
+/// - Hash tables: Fixed size based on algorithm (e.g., 64KB for LZ4)
+///
+/// For decompression, the `maxDecompressedSize` limit applies per-block,
+/// not to total output. Malicious streams declaring huge blocks are rejected.
+///
+/// ## Error Handling
+///
+/// Errors during stream processing are delivered through the stream's
+/// error channel. Subscribe with an `onError` handler:
+/// ```dart
+/// codec.decompress(input).listen(
+///   (chunk) => output.add(chunk),
+///   onError: (e) => print('Decompression failed: $e'),
+/// );
+/// ```
+abstract class CompressionStreamCodec {
+  /// The name of this codec (e.g., 'LZ4', 'GZIP', 'Snappy')
+  String get name;
+
+  /// Compresses a stream of data chunks
+  ///
+  /// Takes an input stream of byte chunks and returns a stream of compressed
+  /// chunks. The implementation should buffer as needed to maintain format
+  /// requirements (e.g., block boundaries).
+  ///
+  /// Example:
+  /// ```dart
+  /// final input = File('large.txt').openRead();
+  /// final compressed = codec.compress(input);
+  /// await compressed.pipe(File('large.txt.lz4').openWrite());
+  /// ```
+  Stream<Uint8List> compress(Stream<Uint8List> input);
+
+  /// Decompresses a stream of compressed data chunks
+  ///
+  /// Takes a stream of compressed byte chunks and returns a stream of
+  /// decompressed chunks. Handles format validation and checksum verification.
+  ///
+  /// Example:
+  /// ```dart
+  /// final input = File('large.txt.lz4').openRead();
+  /// final decompressed = codec.decompress(input);
+  /// await decompressed.pipe(File('large.txt').openWrite());
+  /// ```
+  Stream<Uint8List> decompress(Stream<Uint8List> input);
+
+  /// Creates a stream transformer for compression
+  ///
+  /// Returns a StreamTransformer that can be used with Stream.transform()
+  /// for composable stream processing.
+  ///
+  /// Example:
+  /// ```dart
+  /// await File('input.txt')
+  ///     .openRead()
+  ///     .transform(codec.compressor)
+  ///     .pipe(File('output.lz4').openWrite());
+  /// ```
+  StreamTransformer<Uint8List, Uint8List> get compressor =>
+      StreamTransformer.fromBind(compress);
+
+  /// Creates a stream transformer for decompression
+  ///
+  /// Returns a StreamTransformer that can be used with Stream.transform()
+  /// for composable stream processing.
+  ///
+  /// Example:
+  /// ```dart
+  /// await File('input.lz4')
+  ///     .openRead()
+  ///     .transform(codec.decompressor)
+  ///     .pipe(File('output.txt').openWrite());
+  /// ```
+  StreamTransformer<Uint8List, Uint8List> get decompressor =>
+      StreamTransformer.fromBind(decompress);
+}

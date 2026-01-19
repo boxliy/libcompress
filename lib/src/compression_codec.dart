@@ -1,0 +1,119 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+/// Codec capability modes
+///
+/// Used to query what features a codec supports via [CompressionCodec.supports].
+enum CodecMode {
+  /// Block-based (synchronous) compression/decompression
+  ///
+  /// All codecs support this mode - compress/decompress operate on
+  /// complete byte arrays in memory.
+  block,
+
+  /// Stream-based compression/decompression
+  ///
+  /// Codec has a corresponding [CompressionStreamCodec] implementation
+  /// that can process data incrementally via Dart streams.
+  stream,
+}
+
+/// Base class for compression codecs
+///
+/// Provides both synchronous and asynchronous APIs for compressing
+/// and decompressing data. Synchronous methods are suitable for small
+/// data that fits in memory, while async methods allow better responsiveness
+/// for large data or UI contexts.
+///
+/// ## Thread Safety
+///
+/// Codec instances are generally **not** thread-safe for concurrent use.
+/// Each codec maintains internal state (buffers, hash tables) that could
+/// be corrupted by concurrent access. For parallel processing:
+/// - Create a separate codec instance per isolate
+/// - Use `Isolate.run()` with a fresh codec for background work
+///
+/// ## Exception Behavior
+///
+/// All codecs throw specific exceptions on errors:
+/// - **[Lz4FormatException]**: Invalid LZ4 frame/block structure
+/// - **[GzipFormatException]**: Invalid GZIP header/trailer or CRC mismatch
+/// - **[DeflateFormatException]**: Invalid DEFLATE block structure
+/// - **[ZstdFormatException]**: Invalid Zstandard frame/block structure
+/// - **[SnappyFormatException]**: Invalid Snappy block or framing format
+/// - **[StateError]**: Internal decoder state issues (e.g., exhausted input)
+/// - **[RangeError]**: Bounds violations (should be rare with valid input)
+///
+/// All format exceptions extend [CompressionFormatException] which extends
+/// [FormatException], allowing catch-all error handling:
+/// ```dart
+/// try {
+///   final data = codec.decompress(compressed);
+/// } on CompressionFormatException catch (e) {
+///   print('Invalid compressed data: $e');
+/// }
+/// ```
+///
+/// ## Memory Limits
+///
+/// Each codec supports a maximum decompressed size limit to prevent
+/// decompression bomb attacks. Configure via codec-specific constructors
+/// (e.g., `Lz4Codec(maxDecompressedSize: 10 * 1024 * 1024)`).
+abstract class CompressionCodec {
+  /// Compress data synchronously
+  ///
+  /// Takes a byte array and returns compressed data. The entire input
+  /// must fit in memory. For large data, consider using streaming APIs.
+  Uint8List compress(Uint8List data);
+
+  /// Decompress data synchronously
+  ///
+  /// Takes compressed data and returns the original uncompressed bytes.
+  /// Throws an exception if the data is corrupted or in an invalid format.
+  Uint8List decompress(Uint8List data);
+
+  /// Compress data asynchronously
+  ///
+  /// Schedules compression to run after a microtask yield, allowing
+  /// other async operations to interleave. The actual compression
+  /// work is still synchronous but won't block the caller immediately.
+  ///
+  /// **Note:** This does NOT run compression on a separate thread/isolate.
+  /// For truly non-blocking compression of large data, use:
+  /// - `Isolate.run(() => codec.compress(data))` for isolate-based offloading
+  /// - Streaming APIs (`CompressionStreamCodec`) for chunked processing
+  Future<Uint8List> compressAsync(final Uint8List data) {
+    return Future.microtask(() => compress(data));
+  }
+
+  /// Decompress data asynchronously
+  ///
+  /// Schedules decompression to run after a microtask yield, allowing
+  /// other async operations to interleave. The actual decompression
+  /// work is still synchronous but won't block the caller immediately.
+  ///
+  /// **Note:** This does NOT run decompression on a separate thread/isolate.
+  /// For truly non-blocking decompression of large data, use:
+  /// - `Isolate.run(() => codec.decompress(data))` for isolate-based offloading
+  /// - Streaming APIs (`CompressionStreamCodec`) for chunked processing
+  Future<Uint8List> decompressAsync(final Uint8List data) {
+    return Future.microtask(() => decompress(data));
+  }
+
+  /// Get codec name (e.g., 'LZ4', 'GZIP', 'Snappy')
+  String get name;
+
+  /// Check if this codec supports a given mode
+  ///
+  /// Use this to query codec capabilities before attempting operations:
+  /// ```dart
+  /// if (codec.supports(CodecMode.stream)) {
+  ///   final streamCodec = CodecFactory.streaming(CodecType.lz4);
+  ///   // Use streaming API
+  /// }
+  /// ```
+  ///
+  /// All codecs support [CodecMode.block]. Override this method to
+  /// indicate additional capabilities like [CodecMode.stream].
+  bool supports(final CodecMode mode) => mode == CodecMode.block;
+}
