@@ -16,22 +16,33 @@ Future<void> expectWebRoundTrip({
     () => _compileRoundTripProgram(codecExpression),
   );
 
-  final jsResult = await Process.run('node', <String>[
-    '-e',
-    '''
-const payload = process.argv[1];
+  final payloadDirectory = await Directory.systemTemp.createTemp(
+    'libcompress_web_payload_',
+  );
+  try {
+    final payloadPath = '${payloadDirectory.path}/payload.base64';
+    await File(payloadPath).writeAsString(base64Encode(data));
+
+    final jsResult = await Process.run('node', <String>[
+      '-e',
+      '''
+const fs = require("fs");
+const payload = fs.readFileSync(process.argv[1], "utf8");
 globalThis.self = globalThis;
 globalThis.dartPrint = (message) => console.log(message);
 globalThis.dartMainRunner = (main, args) => main([payload]);
 require(${jsonEncode(jsPath)});
 ''',
-    base64Encode(data),
-  ]);
-  expect(jsResult.exitCode, 0, reason: _processOutput(jsResult));
+      payloadPath,
+    ]);
+    expect(jsResult.exitCode, 0, reason: _processOutput(jsResult));
 
-  final result =
-      jsonDecode((jsResult.stdout as String).trim()) as Map<String, Object?>;
-  expect(result['decompressedLength'], data.length);
+    final result =
+        jsonDecode((jsResult.stdout as String).trim()) as Map<String, Object?>;
+    expect(result['decompressedLength'], data.length);
+  } finally {
+    await payloadDirectory.delete(recursive: true);
+  }
 }
 
 Future<void> expectWebDecompresses({
@@ -44,20 +55,33 @@ Future<void> expectWebDecompresses({
     () => _compileDecompressProgram(codecExpression),
   );
 
-  final jsResult = await Process.run('node', <String>[
-    '-e',
-    '''
-const compressed = process.argv[1];
-const expected = process.argv[2];
+  final payloadDirectory = await Directory.systemTemp.createTemp(
+    'libcompress_web_payload_',
+  );
+  try {
+    final compressedPath = '${payloadDirectory.path}/compressed.base64';
+    final expectedPath = '${payloadDirectory.path}/expected.base64';
+    await File(compressedPath).writeAsString(base64Encode(compressed));
+    await File(expectedPath).writeAsString(base64Encode(expected));
+
+    final jsResult = await Process.run('node', <String>[
+      '-e',
+      '''
+const fs = require("fs");
+const compressed = fs.readFileSync(process.argv[1], "utf8");
+const expected = fs.readFileSync(process.argv[2], "utf8");
 globalThis.self = globalThis;
 globalThis.dartPrint = (message) => console.log(message);
 globalThis.dartMainRunner = (main, args) => main([compressed, expected]);
 require(${jsonEncode(jsPath)});
 ''',
-    base64Encode(compressed),
-    base64Encode(expected),
-  ]);
-  expect(jsResult.exitCode, 0, reason: _processOutput(jsResult));
+      compressedPath,
+      expectedPath,
+    ]);
+    expect(jsResult.exitCode, 0, reason: _processOutput(jsResult));
+  } finally {
+    await payloadDirectory.delete(recursive: true);
+  }
 }
 
 Future<String> _compileRoundTripProgram(String codecExpression) async {
@@ -137,6 +161,7 @@ Future<String> _compileWebProgram(String name, String source) async {
   final compileResult = await Process.run('dart', <String>[
     'compile',
     'js',
+    '-O1',
     '--packages=${Directory.current.path}/.dart_tool/package_config.json',
     sourcePath,
     '-o',
