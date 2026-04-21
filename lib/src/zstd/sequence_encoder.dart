@@ -132,7 +132,8 @@ class SequenceEncoder {
         }
 
         // Flush if needed (when bits accumulate)
-        final totalBits = token.offsetExtraBits +
+        final totalBits =
+            token.offsetExtraBits +
             token.matchExtraBits +
             token.literalExtraBits;
         if (totalBits >= 64 - 7 - 17) {
@@ -254,8 +255,17 @@ class SequenceEncoder {
     // Can produce Offset_Value 1 or 2
     for (var extra = 0; extra < 2; extra++) {
       final offsetValue = 1 + extra;
-      if (_repeatOffsetValueProduces(offsetValue, literalLength, previousOffsets) == offset) {
-        _updateRepeatHistoryForValue(offsetValue, literalLength, previousOffsets);
+      if (_repeatOffsetValueProduces(
+            offsetValue,
+            literalLength,
+            previousOffsets,
+          ) ==
+          offset) {
+        _updateRepeatHistoryForValue(
+          offsetValue,
+          literalLength,
+          previousOffsets,
+        );
         return _OffsetEncoding(symbol: 1, bits: 1, value: extra);
       }
     }
@@ -370,7 +380,6 @@ class SequenceEncoder {
     }
     throw StateError('Unable to encode offset $offset');
   }
-
 }
 
 class _OffsetEncoding {
@@ -410,11 +419,9 @@ class SequenceSymbols {
     for (final match in matches) {
       llSymbols.add(_getLiteralLengthSymbol(match.literalLength));
       mlSymbols.add(_getMatchLengthSymbol(match.length));
-      ofSymbols.add(_encodeOffsetSymbol(
-        match.literalLength,
-        match.offset,
-        prevOffsets,
-      ));
+      ofSymbols.add(
+        _encodeOffsetSymbol(match.literalLength, match.offset, prevOffsets),
+      );
     }
 
     return SequenceSymbols(
@@ -617,10 +624,9 @@ class FseCompressionTable {
     var position = 0;
 
     for (var symbol = 0; symbol <= maxSymbol; symbol++) {
-      final count =
-          (symbol < normalized.length && normalized[symbol] > 0)
-              ? normalized[symbol]
-              : 0;
+      final count = (symbol < normalized.length && normalized[symbol] > 0)
+          ? normalized[symbol]
+          : 0;
       for (var i = 0; i < count; i++) {
         table[position] = symbol;
         do {
@@ -643,8 +649,7 @@ class FseCompressionTable {
     var total = 0;
 
     for (var symbol = 0; symbol <= maxSymbol; symbol++) {
-      final count =
-          (symbol < normalized.length) ? normalized[symbol] : 0;
+      final count = (symbol < normalized.length) ? normalized[symbol] : 0;
       if (count == 0) {
         deltaNumberOfBits[symbol] = ((log + 1) << 16) - tableSize;
       } else if (count == -1 || count == 1) {
@@ -697,14 +702,15 @@ class FseCompressionTable {
 
 /// Bit output stream matching Java BitOutputStream behavior
 class BitOutputStream {
-  int _container = 0;
+  BigInt _container = BigInt.zero;
   int _bitCount = 0;
   final _bytes = <int>[];
 
   /// Add bits to the stream (LSB accumulation)
   void addBits(final int value, final int bits) {
     if (bits <= 0) return;
-    _container |= (value & ((1 << bits) - 1)) << _bitCount;
+    final mask = (BigInt.one << bits) - BigInt.one;
+    _container |= (BigInt.from(value) & mask) << _bitCount;
     _bitCount += bits;
   }
 
@@ -712,7 +718,7 @@ class BitOutputStream {
   void flush() {
     final bytes = _bitCount >> 3;
     for (var i = 0; i < bytes; i++) {
-      _bytes.add(_container & 0xFF);
+      _bytes.add((_container & BigInt.from(0xFF)).toInt());
       _container >>= 8;
     }
     _bitCount &= 7;
@@ -726,7 +732,8 @@ class BitOutputStream {
 
     // Flush remaining bits
     if (_bitCount > 0) {
-      _bytes.add(_container & ((1 << _bitCount) - 1));
+      final mask = (BigInt.one << _bitCount) - BigInt.one;
+      _bytes.add((_container & mask).toInt());
     }
 
     return Uint8List.fromList(_bytes);
