@@ -83,4 +83,4 @@ jobs:
         run: dart analyze .
 
       - name: Run all tests
-        run: dart test --reporter expanded
+        run: dart test --reporter github
