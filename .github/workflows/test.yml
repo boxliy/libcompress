@@ -65,7 +65,7 @@ jobs:
             exec unsnappy "$input"
           fi
 
-          exec snappy "$input"
+          exec snappy -f "$input"
           EOF
           sudo chmod +x /usr/local/bin/snzip
 
