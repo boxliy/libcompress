@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:test/test.dart';
 import 'package:libcompress/src/zstd/zstd_codec.dart';
 import 'package:libcompress/src/zstd/zstd_encoder.dart';
@@ -439,6 +440,57 @@ void main() {
       expect(decoded, equals(data));
       // Should achieve good compression
       expect(compressed.length, lessThan(data.length ~/ 2));
+    });
+
+    test('round-trips large json with embedded base64 across blocks', () {
+      final codec = ZstdCodec();
+      final data = Uint8List.fromList(
+        utf8.encode(
+          jsonEncode({
+            'document': {'id': 'tpl'},
+            'elements': List.generate(
+              2000,
+              (i) => {
+                'id': 'e$i',
+                'kind': 'image',
+                'image': {
+                  'source':
+                      'data:image/png;base64,${base64Encode(List.generate(1024, (j) => (i + j) & 0xff))}',
+                },
+                'transform': {'x': i, 'y': i % 100, 'width': 20, 'height': 30},
+              },
+            ),
+          }),
+        ),
+      );
+
+      final compressed = codec.compress(data);
+      final decoded = codec.decompress(compressed);
+      expect(decoded, orderedEquals(data));
+    });
+
+    test('round-trips utf8 json with high byte literals', () {
+      final codec = ZstdCodec();
+      final data = Uint8List.fromList(
+        utf8.encode(
+          jsonEncode({
+            'document': {'id': 'shipping_label', 'locale': 'zh-CN'},
+            'elements': List.generate(
+              2000,
+              (i) => {
+                'id': 'text_$i',
+                'kind': 'text',
+                'text': '目的地 台北 发货 标签 $i {{destination}} PLT-2048',
+                'transform': {'x': i, 'y': i % 100, 'width': 90, 'height': 12},
+              },
+            ),
+          }),
+        ),
+      );
+
+      final compressed = codec.compress(data);
+      final decoded = codec.decompress(compressed);
+      expect(decoded, orderedEquals(data));
     });
 
     test('compressed block with varied literal lengths', () {

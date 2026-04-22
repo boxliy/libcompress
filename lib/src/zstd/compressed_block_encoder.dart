@@ -112,6 +112,12 @@ class CompressedBlockEncoder {
       return null;
     }
 
+    // The current Huffman weights encoder only supports the direct 4-bit
+    // representation, whose header can encode at most 128 weights.
+    if (maxSym + 1 > 128) {
+      return null;
+    }
+
     // Encode weights header
     final header = encoder.encodeWeightsHeader(maxSym + 1);
 
