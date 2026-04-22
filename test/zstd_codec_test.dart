@@ -469,6 +469,62 @@ void main() {
       expect(decoded, orderedEquals(data));
     });
 
+    test(
+      'round-trips large json with embedded base64 across blocks on web/js',
+      () async {
+        final data = Uint8List.fromList(
+          utf8.encode(
+            jsonEncode({
+              'document': {'id': 'tpl'},
+              'elements': List.generate(
+                2000,
+                (i) => {
+                  'id': 'e$i',
+                  'kind': 'image',
+                  'image': {
+                    'source':
+                        'data:image/png;base64,${base64Encode(List.generate(1024, (j) => (i + j) & 0xff))}',
+                  },
+                  'transform': {
+                    'x': i,
+                    'y': i % 100,
+                    'width': 20,
+                    'height': 30,
+                  },
+                },
+              ),
+            }),
+          ),
+        );
+
+        await expectWebRoundTrip(codecExpression: 'ZstdCodec()', data: data);
+      },
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
+
+    test(
+      'round-trips large base64 literals with repeated markers on web/js',
+      () async {
+        const alphabet =
+            'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+        const marker =
+            '--REPEATED-MATCH-MARKER-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789--';
+        var state = 1;
+        final buffer = StringBuffer();
+        for (var chunk = 0; chunk < 32; chunk += 1) {
+          for (var i = 0; i < 3000; i += 1) {
+            state = (state * 1664525 + 1013904223) & 0xffffffff;
+            buffer.write(alphabet[(state >> 16) & 63]);
+          }
+          buffer.write(marker);
+        }
+        final data = Uint8List.fromList(utf8.encode(buffer.toString()));
+
+        await expectWebRoundTrip(codecExpression: 'ZstdCodec()', data: data);
+      },
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
+
     test('round-trips utf8 json with high byte literals', () {
       final codec = ZstdCodec();
       final data = Uint8List.fromList(
